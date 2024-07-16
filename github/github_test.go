@@ -212,11 +212,11 @@ func testBadOptions(t *testing.T, methodName string, f func() error) {
 // Method f should be a regular call that would normally succeed, but
 // should return an error when NewRequest or s.client.Do fails.
 func testNewRequestAndDoFailure(t *testing.T, methodName string, client *Client, f func() (*Response, error)) {
-	testNewRequestAndDoFailureCategory(t, methodName, client, coreCategory, f)
+	testNewRequestAndDoFailureCategory(t, methodName, client, CoreCategory, f)
 }
 
 // testNewRequestAndDoFailureCategory works Like testNewRequestAndDoFailure, but allows setting the category
-func testNewRequestAndDoFailureCategory(t *testing.T, methodName string, client *Client, category rateLimitCategory, f func() (*Response, error)) {
+func testNewRequestAndDoFailureCategory(t *testing.T, methodName string, client *Client, category RateLimitCategory, f func() (*Response, error)) {
 	t.Helper()
 	if methodName == "" {
 		t.Error("testNewRequestAndDoFailure: must supply method methodName")
@@ -275,6 +275,13 @@ func testErrorResponseForStatusCode(t *testing.T, code int) {
 	}
 }
 
+func assertNoDiff(t *testing.T, want, got interface{}) {
+	t.Helper()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("diff mismatch (-want +got):\n%v", diff)
+	}
+}
+
 func assertNilError(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
@@ -321,26 +328,45 @@ func TestClient(t *testing.T) {
 
 func TestWithAuthToken(t *testing.T) {
 	token := "gh_test_token"
-	var gotAuthHeaderVals []string
-	wantAuthHeaderVals := []string{"Bearer " + token}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuthHeaderVals = r.Header["Authorization"]
-	}))
-	validate := func(c *Client) {
+
+	validate := func(t *testing.T, c *http.Client, token string) {
 		t.Helper()
-		gotAuthHeaderVals = nil
-		_, err := c.Client().Get(srv.URL)
-		if err != nil {
-			t.Fatalf("Get returned unexpected error: %v", err)
+		want := token
+		if want != "" {
+			want = "Bearer " + want
 		}
-		diff := cmp.Diff(wantAuthHeaderVals, gotAuthHeaderVals)
-		if diff != "" {
-			t.Errorf("Authorization header values mismatch (-want +got):\n%s", diff)
+		gotReq := false
+		headerVal := ""
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotReq = true
+			headerVal = r.Header.Get("Authorization")
+		}))
+		_, err := c.Get(srv.URL)
+		assertNilError(t, err)
+		if !gotReq {
+			t.Error("request not sent")
+		}
+		if headerVal != want {
+			t.Errorf("Authorization header is %v, want %v", headerVal, want)
 		}
 	}
-	validate(NewClient(nil).WithAuthToken(token))
-	validate(new(Client).WithAuthToken(token))
-	validate(NewTokenClient(context.Background(), token))
+
+	t.Run("zero-value Client", func(t *testing.T) {
+		c := new(Client).WithAuthToken(token)
+		validate(t, c.Client(), token)
+	})
+
+	t.Run("NewClient", func(t *testing.T) {
+		httpClient := &http.Client{}
+		client := NewClient(httpClient).WithAuthToken(token)
+		validate(t, client.Client(), token)
+		// make sure the original client isn't setting auth headers now
+		validate(t, httpClient, "")
+	})
+
+	t.Run("NewTokenClient", func(t *testing.T) {
+		validate(t, NewTokenClient(context.Background(), token).Client(), token)
+	})
 }
 
 func TestWithEnterpriseURLs(t *testing.T) {
@@ -465,23 +491,6 @@ func TestWithEnterpriseURLs(t *testing.T) {
 func TestClient_rateLimits(t *testing.T) {
 	if got, want := len(Client{}.rateLimits), reflect.TypeOf(RateLimits{}).NumField(); got != want {
 		t.Errorf("len(Client{}.rateLimits) is %v, want %v", got, want)
-	}
-}
-
-func TestRateLimits_String(t *testing.T) {
-	v := RateLimits{
-		Core:                      &Rate{},
-		Search:                    &Rate{},
-		GraphQL:                   &Rate{},
-		IntegrationManifest:       &Rate{},
-		SourceImport:              &Rate{},
-		CodeScanningUpload:        &Rate{},
-		ActionsRunnerRegistration: &Rate{},
-		SCIM:                      &Rate{},
-	}
-	want := `github.RateLimits{Core:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}, Search:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}, GraphQL:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}, IntegrationManifest:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}, SourceImport:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}, CodeScanningUpload:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}, ActionsRunnerRegistration:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}, SCIM:github.Rate{Limit:0, Remaining:0, Reset:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}}}`
-	if got := v.String(); got != want {
-		t.Errorf("RateLimits.String = %v, want %v", got, want)
 	}
 }
 
@@ -1123,58 +1132,73 @@ func TestDo_rateLimitCategory(t *testing.T) {
 	tests := []struct {
 		method   string
 		url      string
-		category rateLimitCategory
+		category RateLimitCategory
 	}{
 		{
 			method:   http.MethodGet,
 			url:      "/",
-			category: coreCategory,
+			category: CoreCategory,
 		},
 		{
 			method:   http.MethodGet,
 			url:      "/search/issues?q=rate",
-			category: searchCategory,
+			category: SearchCategory,
 		},
 		{
 			method:   http.MethodGet,
 			url:      "/graphql",
-			category: graphqlCategory,
+			category: GraphqlCategory,
 		},
 		{
 			method:   http.MethodPost,
 			url:      "/app-manifests/code/conversions",
-			category: integrationManifestCategory,
+			category: IntegrationManifestCategory,
 		},
 		{
 			method:   http.MethodGet,
 			url:      "/app-manifests/code/conversions",
-			category: coreCategory, // only POST requests are in the integration manifest category
+			category: CoreCategory, // only POST requests are in the integration manifest category
 		},
 		{
 			method:   http.MethodPut,
 			url:      "/repos/google/go-github/import",
-			category: sourceImportCategory,
+			category: SourceImportCategory,
 		},
 		{
 			method:   http.MethodGet,
 			url:      "/repos/google/go-github/import",
-			category: coreCategory, // only PUT requests are in the source import category
+			category: CoreCategory, // only PUT requests are in the source import category
 		},
 		{
 			method:   http.MethodPost,
 			url:      "/repos/google/go-github/code-scanning/sarifs",
-			category: codeScanningUploadCategory,
+			category: CodeScanningUploadCategory,
 		},
 		{
 			method:   http.MethodGet,
 			url:      "/scim/v2/organizations/ORG/Users",
-			category: scimCategory,
+			category: ScimCategory,
+		},
+		{
+			method:   http.MethodPost,
+			url:      "/repos/google/go-github/dependency-graph/snapshots",
+			category: DependencySnapshotsCategory,
+		},
+		{
+			method:   http.MethodGet,
+			url:      "/search/code?q=rate",
+			category: CodeSearchCategory,
+		},
+		{
+			method:   http.MethodGet,
+			url:      "/orgs/google/audit-log",
+			category: AuditLogCategory,
 		},
 		// missing a check for actionsRunnerRegistrationCategory: API not found
 	}
 
 	for _, tt := range tests {
-		if got, want := category(tt.method, tt.url), tt.category; got != want {
+		if got, want := GetRateLimitCategory(tt.method, tt.url), tt.category; got != want {
 			t.Errorf("expecting category %v, found %v", got, want)
 		}
 	}
@@ -1354,6 +1378,176 @@ func TestDo_rateLimit_ignoredFromCache(t *testing.T) {
 	}
 	if !madeNetworkCall {
 		t.Fatal("Network call was not made, even though the rate limits from the cache should've been ignored")
+	}
+}
+
+// Ensure sleeps until the rate limit is reset when the client is rate limited.
+func TestDo_rateLimit_sleepUntilResponseResetLimit(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	reset := time.Now().UTC().Add(time.Second)
+
+	var firstRequest = true
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if firstRequest {
+			firstRequest = false
+			w.Header().Set(headerRateLimit, "60")
+			w.Header().Set(headerRateRemaining, "0")
+			w.Header().Set(headerRateReset, fmt.Sprint(reset.Unix()))
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprintln(w, `{
+   "message": "API rate limit exceeded for xxx.xxx.xxx.xxx. (But here's the good news: Authenticated requests get a higher rate limit. Check out the documentation for more details.)",
+   "documentation_url": "https://docs.github.com/en/rest/overview/resources-in-the-rest-api#abuse-rate-limits"
+}`)
+			return
+		}
+		w.Header().Set(headerRateLimit, "5000")
+		w.Header().Set(headerRateRemaining, "5000")
+		w.Header().Set(headerRateReset, fmt.Sprint(reset.Add(time.Hour).Unix()))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, `{}`)
+	})
+
+	req, _ := client.NewRequest("GET", ".", nil)
+	ctx := context.Background()
+	resp, err := client.Do(context.WithValue(ctx, SleepUntilPrimaryRateLimitResetWhenRateLimited, true), req, nil)
+	if err != nil {
+		t.Errorf("Do returned unexpected error: %v", err)
+	}
+	if got, want := resp.StatusCode, http.StatusOK; got != want {
+		t.Errorf("Response status code = %v, want %v", got, want)
+	}
+}
+
+// Ensure tries to sleep until the rate limit is reset when the client is rate limited, but only once.
+func TestDo_rateLimit_sleepUntilResponseResetLimitRetryOnce(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	reset := time.Now().UTC().Add(time.Second)
+
+	requestCount := 0
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set(headerRateLimit, "60")
+		w.Header().Set(headerRateRemaining, "0")
+		w.Header().Set(headerRateReset, fmt.Sprint(reset.Unix()))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintln(w, `{
+   "message": "API rate limit exceeded for xxx.xxx.xxx.xxx. (But here's the good news: Authenticated requests get a higher rate limit. Check out the documentation for more details.)",
+   "documentation_url": "https://docs.github.com/en/rest/overview/resources-in-the-rest-api#abuse-rate-limits"
+}`)
+	})
+
+	req, _ := client.NewRequest("GET", ".", nil)
+	ctx := context.Background()
+	_, err := client.Do(context.WithValue(ctx, SleepUntilPrimaryRateLimitResetWhenRateLimited, true), req, nil)
+	if err == nil {
+		t.Error("Expected error to be returned.")
+	}
+	if got, want := requestCount, 2; got != want {
+		t.Errorf("Expected 2 requests, got %d", got)
+	}
+}
+
+// Ensure a network call is not made when it's known that API rate limit is still exceeded.
+func TestDo_rateLimit_sleepUntilClientResetLimit(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	reset := time.Now().UTC().Add(time.Second)
+	client.rateLimits[CoreCategory] = Rate{Limit: 5000, Remaining: 0, Reset: Timestamp{reset}}
+	requestCount := 0
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set(headerRateLimit, "5000")
+		w.Header().Set(headerRateRemaining, "5000")
+		w.Header().Set(headerRateReset, fmt.Sprint(reset.Add(time.Hour).Unix()))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, `{}`)
+	})
+	req, _ := client.NewRequest("GET", ".", nil)
+	ctx := context.Background()
+	resp, err := client.Do(context.WithValue(ctx, SleepUntilPrimaryRateLimitResetWhenRateLimited, true), req, nil)
+	if err != nil {
+		t.Errorf("Do returned unexpected error: %v", err)
+	}
+	if got, want := resp.StatusCode, http.StatusOK; got != want {
+		t.Errorf("Response status code = %v, want %v", got, want)
+	}
+	if got, want := requestCount, 1; got != want {
+		t.Errorf("Expected 1 request, got %d", got)
+	}
+}
+
+// Ensure sleep is aborted when the context is cancelled.
+func TestDo_rateLimit_abortSleepContextCancelled(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	// We use a 1 minute reset time to ensure the sleep is not completed.
+	reset := time.Now().UTC().Add(time.Minute)
+	requestCount := 0
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set(headerRateLimit, "60")
+		w.Header().Set(headerRateRemaining, "0")
+		w.Header().Set(headerRateReset, fmt.Sprint(reset.Unix()))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintln(w, `{
+   "message": "API rate limit exceeded for xxx.xxx.xxx.xxx. (But here's the good news: Authenticated requests get a higher rate limit. Check out the documentation for more details.)",
+   "documentation_url": "https://docs.github.com/en/rest/overview/resources-in-the-rest-api#abuse-rate-limits"
+}`)
+	})
+
+	req, _ := client.NewRequest("GET", ".", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err := client.Do(context.WithValue(ctx, SleepUntilPrimaryRateLimitResetWhenRateLimited, true), req, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Error("Expected context deadline exceeded error.")
+	}
+	if got, want := requestCount, 1; got != want {
+		t.Errorf("Expected 1 requests, got %d", got)
+	}
+}
+
+// Ensure sleep is aborted when the context is cancelled on initial request.
+func TestDo_rateLimit_abortSleepContextCancelledClientLimit(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	reset := time.Now().UTC().Add(time.Minute)
+	client.rateLimits[CoreCategory] = Rate{Limit: 5000, Remaining: 0, Reset: Timestamp{reset}}
+	requestCount := 0
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set(headerRateLimit, "5000")
+		w.Header().Set(headerRateRemaining, "5000")
+		w.Header().Set(headerRateReset, fmt.Sprint(reset.Add(time.Hour).Unix()))
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, `{}`)
+	})
+	req, _ := client.NewRequest("GET", ".", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err := client.Do(context.WithValue(ctx, SleepUntilPrimaryRateLimitResetWhenRateLimited, true), req, nil)
+	rateLimitError, ok := err.(*RateLimitError)
+	if !ok {
+		t.Fatalf("Expected a *rateLimitError error; got %#v.", err)
+	}
+	if got, wantSuffix := rateLimitError.Message, "Context cancelled while waiting for rate limit to reset until"; !strings.HasPrefix(got, wantSuffix) {
+		t.Errorf("Expected request to be prevented because context cancellation, got: %v.", got)
+	}
+	if got, want := requestCount, 0; got != want {
+		t.Errorf("Expected 1 requests, got %d", got)
 	}
 }
 
@@ -2114,257 +2308,25 @@ func TestErrorResponse_Error(t *testing.T) {
 	if err.Error() == "" {
 		t.Errorf("Expected non-empty ErrorResponse.Error()")
 	}
+
+	//dont panic if request is nil
+	res = &http.Response{}
+	err = ErrorResponse{Message: "m", Response: res}
+	if err.Error() == "" {
+		t.Errorf("Expected non-empty ErrorResponse.Error()")
+	}
+
+	//dont panic if response is nil
+	err = ErrorResponse{Message: "m"}
+	if err.Error() == "" {
+		t.Errorf("Expected non-empty ErrorResponse.Error()")
+	}
 }
 
 func TestError_Error(t *testing.T) {
 	err := Error{}
 	if err.Error() == "" {
 		t.Errorf("Expected non-empty Error.Error()")
-	}
-}
-
-func TestRateLimits(t *testing.T) {
-	client, mux, _, teardown := setup()
-	defer teardown()
-
-	mux.HandleFunc("/rate_limit", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(t, r, "GET")
-		fmt.Fprint(w, `{"resources":{
-			"core": {"limit":2,"remaining":1,"reset":1372700873},
-			"search": {"limit":3,"remaining":2,"reset":1372700874},
-			"graphql": {"limit":4,"remaining":3,"reset":1372700875},
-			"integration_manifest": {"limit":5,"remaining":4,"reset":1372700876},
-			"source_import": {"limit":6,"remaining":5,"reset":1372700877},
-			"code_scanning_upload": {"limit":7,"remaining":6,"reset":1372700878},
-			"actions_runner_registration": {"limit":8,"remaining":7,"reset":1372700879},
-			"scim": {"limit":9,"remaining":8,"reset":1372700880}
-		}}`)
-	})
-
-	ctx := context.Background()
-	rate, _, err := client.RateLimits(ctx)
-	if err != nil {
-		t.Errorf("RateLimits returned error: %v", err)
-	}
-
-	want := &RateLimits{
-		Core: &Rate{
-			Limit:     2,
-			Remaining: 1,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 53, 0, time.UTC).Local()},
-		},
-		Search: &Rate{
-			Limit:     3,
-			Remaining: 2,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 54, 0, time.UTC).Local()},
-		},
-		GraphQL: &Rate{
-			Limit:     4,
-			Remaining: 3,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 55, 0, time.UTC).Local()},
-		},
-		IntegrationManifest: &Rate{
-			Limit:     5,
-			Remaining: 4,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 56, 0, time.UTC).Local()},
-		},
-		SourceImport: &Rate{
-			Limit:     6,
-			Remaining: 5,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 57, 0, time.UTC).Local()},
-		},
-		CodeScanningUpload: &Rate{
-			Limit:     7,
-			Remaining: 6,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 58, 0, time.UTC).Local()},
-		},
-		ActionsRunnerRegistration: &Rate{
-			Limit:     8,
-			Remaining: 7,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 59, 0, time.UTC).Local()},
-		},
-		SCIM: &Rate{
-			Limit:     9,
-			Remaining: 8,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 48, 00, 0, time.UTC).Local()},
-		},
-	}
-	if !cmp.Equal(rate, want) {
-		t.Errorf("RateLimits returned %+v, want %+v", rate, want)
-	}
-	tests := []struct {
-		category rateLimitCategory
-		rate     *Rate
-	}{
-		{
-			category: coreCategory,
-			rate:     want.Core,
-		},
-		{
-			category: searchCategory,
-			rate:     want.Search,
-		},
-		{
-			category: graphqlCategory,
-			rate:     want.GraphQL,
-		},
-		{
-			category: integrationManifestCategory,
-			rate:     want.IntegrationManifest,
-		},
-		{
-			category: sourceImportCategory,
-			rate:     want.SourceImport,
-		},
-		{
-			category: codeScanningUploadCategory,
-			rate:     want.CodeScanningUpload,
-		},
-		{
-			category: actionsRunnerRegistrationCategory,
-			rate:     want.ActionsRunnerRegistration,
-		},
-		{
-			category: scimCategory,
-			rate:     want.SCIM,
-		},
-	}
-
-	for _, tt := range tests {
-		if got, want := client.rateLimits[tt.category], *tt.rate; got != want {
-			t.Errorf("client.rateLimits[%v] is %+v, want %+v", tt.category, got, want)
-		}
-	}
-}
-
-func TestRateLimits_coverage(t *testing.T) {
-	client, _, _, teardown := setup()
-	defer teardown()
-
-	ctx := context.Background()
-
-	const methodName = "RateLimits"
-	testNewRequestAndDoFailure(t, methodName, client, func() (*Response, error) {
-		_, resp, err := client.RateLimits(ctx)
-		return resp, err
-	})
-}
-
-func TestRateLimits_overQuota(t *testing.T) {
-	client, mux, _, teardown := setup()
-	defer teardown()
-
-	client.rateLimits[coreCategory] = Rate{
-		Limit:     1,
-		Remaining: 0,
-		Reset:     Timestamp{time.Now().Add(time.Hour).Local()},
-	}
-	mux.HandleFunc("/rate_limit", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"resources":{
-			"core": {"limit":2,"remaining":1,"reset":1372700873},
-			"search": {"limit":3,"remaining":2,"reset":1372700874},
-			"graphql": {"limit":4,"remaining":3,"reset":1372700875},
-			"integration_manifest": {"limit":5,"remaining":4,"reset":1372700876},
-			"source_import": {"limit":6,"remaining":5,"reset":1372700877},
-			"code_scanning_upload": {"limit":7,"remaining":6,"reset":1372700878},
-			"actions_runner_registration": {"limit":8,"remaining":7,"reset":1372700879},
-			"scim": {"limit":9,"remaining":8,"reset":1372700880}
-		}}`)
-	})
-
-	ctx := context.Background()
-	rate, _, err := client.RateLimits(ctx)
-	if err != nil {
-		t.Errorf("RateLimits returned error: %v", err)
-	}
-
-	want := &RateLimits{
-		Core: &Rate{
-			Limit:     2,
-			Remaining: 1,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 53, 0, time.UTC).Local()},
-		},
-		Search: &Rate{
-			Limit:     3,
-			Remaining: 2,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 54, 0, time.UTC).Local()},
-		},
-		GraphQL: &Rate{
-			Limit:     4,
-			Remaining: 3,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 55, 0, time.UTC).Local()},
-		},
-		IntegrationManifest: &Rate{
-			Limit:     5,
-			Remaining: 4,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 56, 0, time.UTC).Local()},
-		},
-		SourceImport: &Rate{
-			Limit:     6,
-			Remaining: 5,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 57, 0, time.UTC).Local()},
-		},
-		CodeScanningUpload: &Rate{
-			Limit:     7,
-			Remaining: 6,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 58, 0, time.UTC).Local()},
-		},
-		ActionsRunnerRegistration: &Rate{
-			Limit:     8,
-			Remaining: 7,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 47, 59, 0, time.UTC).Local()},
-		},
-		SCIM: &Rate{
-			Limit:     9,
-			Remaining: 8,
-			Reset:     Timestamp{time.Date(2013, time.July, 1, 17, 48, 00, 0, time.UTC).Local()},
-		},
-	}
-	if !cmp.Equal(rate, want) {
-		t.Errorf("RateLimits returned %+v, want %+v", rate, want)
-	}
-
-	tests := []struct {
-		category rateLimitCategory
-		rate     *Rate
-	}{
-		{
-			category: coreCategory,
-			rate:     want.Core,
-		},
-		{
-			category: searchCategory,
-			rate:     want.Search,
-		},
-		{
-			category: graphqlCategory,
-			rate:     want.GraphQL,
-		},
-		{
-			category: integrationManifestCategory,
-			rate:     want.IntegrationManifest,
-		},
-		{
-			category: sourceImportCategory,
-			rate:     want.SourceImport,
-		},
-		{
-			category: codeScanningUploadCategory,
-			rate:     want.CodeScanningUpload,
-		},
-		{
-			category: actionsRunnerRegistrationCategory,
-			rate:     want.ActionsRunnerRegistration,
-		},
-		{
-			category: scimCategory,
-			rate:     want.SCIM,
-		},
-	}
-	for _, tt := range tests {
-		if got, want := client.rateLimits[tt.category], *tt.rate; got != want {
-			t.Errorf("client.rateLimits[%v] is %+v, want %+v", tt.category, got, want)
-		}
 	}
 }
 
@@ -2770,116 +2732,6 @@ func TestError_Marshal(t *testing.T) {
 	testJSONMarshal(t, u, want)
 }
 
-func TestRate_Marshal(t *testing.T) {
-	testJSONMarshal(t, &Rate{}, "{}")
-
-	u := &Rate{
-		Limit:     1,
-		Remaining: 1,
-		Reset:     Timestamp{referenceTime},
-	}
-
-	want := `{
-		"limit": 1,
-		"remaining": 1,
-		"reset": ` + referenceTimeStr + `
-	}`
-
-	testJSONMarshal(t, u, want)
-}
-
-func TestRateLimits_Marshal(t *testing.T) {
-	testJSONMarshal(t, &RateLimits{}, "{}")
-
-	u := &RateLimits{
-		Core: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-		Search: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-		GraphQL: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-		IntegrationManifest: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-		SourceImport: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-		CodeScanningUpload: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-		ActionsRunnerRegistration: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-		SCIM: &Rate{
-			Limit:     1,
-			Remaining: 1,
-			Reset:     Timestamp{referenceTime},
-		},
-	}
-
-	want := `{
-		"core": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		},
-		"search": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		},
-		"graphql": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		},
-		"integration_manifest": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		},
-		"source_import": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		},
-		"code_scanning_upload": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		},
-		"actions_runner_registration": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		},
-		"scim": {
-			"limit": 1,
-			"remaining": 1,
-			"reset": ` + referenceTimeStr + `
-		}
-	}`
-
-	testJSONMarshal(t, u, want)
-}
-
 func TestParseTokenExpiration(t *testing.T) {
 	tests := []struct {
 		header string
@@ -2921,4 +2773,33 @@ func TestParseTokenExpiration(t *testing.T) {
 			t.Errorf("parseTokenExpiration of %q\nreturned %#v\n    want %#v", tt.header, exp, tt.want)
 		}
 	}
+}
+
+func TestClientCopy_leak_transport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		accessToken := r.Header.Get("Authorization")
+		_, _ = fmt.Fprintf(w, `{"login": "%s"}`, accessToken)
+	}))
+	clientPreconfiguredWithURLs, err := NewClient(nil).WithEnterpriseURLs(srv.URL, srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	aliceClient := clientPreconfiguredWithURLs.WithAuthToken("alice")
+	bobClient := clientPreconfiguredWithURLs.WithAuthToken("bob")
+
+	alice, _, err := aliceClient.Users.Get(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertNoDiff(t, "Bearer alice", alice.GetLogin())
+
+	bob, _, err := bobClient.Users.Get(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertNoDiff(t, "Bearer bob", bob.GetLogin())
 }

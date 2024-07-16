@@ -5,6 +5,7 @@
 
 //go:generate go run gen-accessors.go
 //go:generate go run gen-stringify-test.go
+//go:generate ../script/metadata.sh update-go
 
 package github
 
@@ -27,7 +28,7 @@ import (
 )
 
 const (
-	Version = "v55.0.0"
+	Version = "v63.0.0"
 
 	defaultAPIVersion = "2022-11-28"
 	defaultBaseURL    = "https://api.github.com/"
@@ -131,10 +132,10 @@ const (
 	// https://developer.github.com/changes/2019-04-11-pulls-branches-for-commit/
 	mediaTypeListPullsOrBranchesForCommitPreview = "application/vnd.github.groot-preview+json"
 
-	// https://docs.github.com/en/rest/previews/#repository-creation-permissions
+	// https://docs.github.com/rest/previews/#repository-creation-permissions
 	mediaTypeMemberAllowedRepoCreationTypePreview = "application/vnd.github.surtur-preview+json"
 
-	// https://docs.github.com/en/rest/previews/#create-and-use-repository-templates
+	// https://docs.github.com/rest/previews/#create-and-use-repository-templates
 	mediaTypeRepositoryTemplatePreview = "application/vnd.github.baptiste-preview+json"
 
 	// https://developer.github.com/changes/2019-10-03-multi-line-comments/
@@ -169,7 +170,7 @@ type Client struct {
 	UserAgent string
 
 	rateMu                  sync.Mutex
-	rateLimits              [categories]Rate // Rate limits for the client as determined by the most recent API calls.
+	rateLimits              [Categories]Rate // Rate limits for the client as determined by the most recent API calls.
 	secondaryRateLimitReset time.Time        // Secondary rate limit reset for the client as determined by the most recent API calls.
 
 	common service // Reuse a single struct instead of allocating one for each service on the heap.
@@ -185,6 +186,7 @@ type Client struct {
 	CodeScanning       *CodeScanningService
 	CodesOfConduct     *CodesOfConductService
 	Codespaces         *CodespacesService
+	Copilot            *CopilotService
 	Dependabot         *DependabotService
 	DependencyGraph    *DependencyGraphService
 	Emojis             *EmojisService
@@ -203,6 +205,7 @@ type Client struct {
 	Organizations      *OrganizationsService
 	Projects           *ProjectsService
 	PullRequests       *PullRequestsService
+	RateLimit          *RateLimitService
 	Reactions          *ReactionsService
 	Repositories       *RepositoriesService
 	SCIM               *SCIMService
@@ -218,6 +221,8 @@ type service struct {
 }
 
 // Client returns the http.Client used by this GitHub client.
+// This should only be used for requests to the GitHub API because
+// request headers will contain an authorization token.
 func (c *Client) Client() *http.Client {
 	c.clientMu.Lock()
 	defer c.clientMu.Unlock()
@@ -313,7 +318,11 @@ func addOptions(s string, opts interface{}) (string, error) {
 // an http.Client that will perform the authentication for you (such as that
 // provided by the golang.org/x/oauth2 library).
 func NewClient(httpClient *http.Client) *Client {
-	c := &Client{client: httpClient}
+	if httpClient == nil {
+		httpClient = &http.Client{}
+	}
+	httpClient2 := *httpClient
+	c := &Client{client: &httpClient2}
 	c.initialize()
 	return c
 }
@@ -406,6 +415,7 @@ func (c *Client) initialize() {
 	c.CodeScanning = (*CodeScanningService)(&c.common)
 	c.Codespaces = (*CodespacesService)(&c.common)
 	c.CodesOfConduct = (*CodesOfConductService)(&c.common)
+	c.Copilot = (*CopilotService)(&c.common)
 	c.Dependabot = (*DependabotService)(&c.common)
 	c.DependencyGraph = (*DependencyGraphService)(&c.common)
 	c.Emojis = (*EmojisService)(&c.common)
@@ -424,6 +434,7 @@ func (c *Client) initialize() {
 	c.Organizations = (*OrganizationsService)(&c.common)
 	c.Projects = (*ProjectsService)(&c.common)
 	c.PullRequests = (*PullRequestsService)(&c.common)
+	c.RateLimit = (*RateLimitService)(&c.common)
 	c.Reactions = (*ReactionsService)(&c.common)
 	c.Repositories = (*RepositoriesService)(&c.common)
 	c.SCIM = (*SCIMService)(&c.common)
@@ -439,15 +450,18 @@ func (c *Client) copy() *Client {
 	c.clientMu.Lock()
 	// can't use *c here because that would copy mutexes by value.
 	clone := Client{
-		client:                  c.client,
+		client:                  &http.Client{},
 		UserAgent:               c.UserAgent,
 		BaseURL:                 c.BaseURL,
 		UploadURL:               c.UploadURL,
 		secondaryRateLimitReset: c.secondaryRateLimitReset,
 	}
 	c.clientMu.Unlock()
-	if clone.client == nil {
-		clone.client = &http.Client{}
+	if c.client != nil {
+		clone.client.Transport = c.client.Transport
+		clone.client.CheckRedirect = c.client.CheckRedirect
+		clone.client.Jar = c.client.Jar
+		clone.client.Timeout = c.client.Timeout
 	}
 	c.rateMu.Lock()
 	copy(clone.rateLimits[:], c.rateLimits[:])
@@ -790,6 +804,7 @@ type requestContext uint8
 
 const (
 	bypassRateLimitCheck requestContext = iota
+	SleepUntilPrimaryRateLimitResetWhenRateLimited
 )
 
 // BareDo sends an API request and lets you handle the api response. If an error
@@ -807,7 +822,7 @@ func (c *Client) BareDo(ctx context.Context, req *http.Request) (*Response, erro
 
 	req = withContext(ctx, req)
 
-	rateLimitCategory := category(req.Method, req.URL.Path)
+	rateLimitCategory := GetRateLimitCategory(req.Method, req.URL.Path)
 
 	if bypass := ctx.Value(bypassRateLimitCheck); bypass == nil {
 		// If we've hit rate limit, don't make further requests before Reset time.
@@ -875,6 +890,15 @@ func (c *Client) BareDo(ctx context.Context, req *http.Request) (*Response, erro
 			err = aerr
 		}
 
+		rateLimitError, ok := err.(*RateLimitError)
+		if ok && req.Context().Value(SleepUntilPrimaryRateLimitResetWhenRateLimited) != nil {
+			if err := sleepUntilResetWithBuffer(req.Context(), rateLimitError.Rate.Reset.Time); err != nil {
+				return response, err
+			}
+			// retry the request once when the rate limit has reset
+			return c.BareDo(context.WithValue(req.Context(), SleepUntilPrimaryRateLimitResetWhenRateLimited, nil), req)
+		}
+
 		// Update the secondary rate limit if we hit it.
 		rerr, ok := err.(*AbuseRateLimitError)
 		if ok && rerr.RetryAfter != nil {
@@ -890,7 +914,7 @@ func (c *Client) BareDo(ctx context.Context, req *http.Request) (*Response, erro
 // JSON decoded and stored in the value pointed to by v, or returned as an
 // error if an API error has occurred. If v implements the io.Writer interface,
 // the raw response body will be written to v, without attempting to first
-// decode it. If v is nil, and no error hapens, the response is returned as is.
+// decode it. If v is nil, and no error happens, the response is returned as is.
 // If rate limit is exceeded and reset time is in the future, Do returns
 // *RateLimitError immediately without making a network API call.
 //
@@ -923,7 +947,7 @@ func (c *Client) Do(ctx context.Context, req *http.Request, v interface{}) (*Res
 // current client state in order to quickly check if *RateLimitError can be immediately returned
 // from Client.Do, and if so, returns it so that Client.Do can skip making a network API call unnecessarily.
 // Otherwise it returns nil, and Client.Do should proceed normally.
-func (c *Client) checkRateLimitBeforeDo(req *http.Request, rateLimitCategory rateLimitCategory) *RateLimitError {
+func (c *Client) checkRateLimitBeforeDo(req *http.Request, rateLimitCategory RateLimitCategory) *RateLimitError {
 	c.rateMu.Lock()
 	rate := c.rateLimits[rateLimitCategory]
 	c.rateMu.Unlock()
@@ -936,6 +960,18 @@ func (c *Client) checkRateLimitBeforeDo(req *http.Request, rateLimitCategory rat
 			Header:     make(http.Header),
 			Body:       io.NopCloser(strings.NewReader("")),
 		}
+
+		if req.Context().Value(SleepUntilPrimaryRateLimitResetWhenRateLimited) != nil {
+			if err := sleepUntilResetWithBuffer(req.Context(), rate.Reset.Time); err == nil {
+				return nil
+			}
+			return &RateLimitError{
+				Rate:     rate,
+				Response: resp,
+				Message:  fmt.Sprintf("Context cancelled while waiting for rate limit to reset until %v, not making remote request.", rate.Reset.Time),
+			}
+		}
+
 		return &RateLimitError{
 			Rate:     rate,
 			Response: resp,
@@ -992,7 +1028,7 @@ func compareHTTPResponse(r1, r2 *http.Response) bool {
 /*
 An ErrorResponse reports one or more errors caused by an API request.
 
-GitHub API docs: https://docs.github.com/en/rest/#client-errors
+GitHub API docs: https://docs.github.com/rest/#client-errors
 */
 type ErrorResponse struct {
 	Response *http.Response `json:"-"`       // HTTP response that caused this error
@@ -1002,7 +1038,7 @@ type ErrorResponse struct {
 	Block *ErrorBlock `json:"block,omitempty"`
 	// Most errors will also include a documentation_url field pointing
 	// to some content that might help you resolve the error, see
-	// https://docs.github.com/en/rest/#client-errors
+	// https://docs.github.com/rest/#client-errors
 	DocumentationURL string `json:"documentation_url,omitempty"`
 }
 
@@ -1015,9 +1051,17 @@ type ErrorBlock struct {
 }
 
 func (r *ErrorResponse) Error() string {
-	return fmt.Sprintf("%v %v: %d %v %+v",
-		r.Response.Request.Method, sanitizeURL(r.Response.Request.URL),
-		r.Response.StatusCode, r.Message, r.Errors)
+	if r.Response != nil && r.Response.Request != nil {
+		return fmt.Sprintf("%v %v: %d %v %+v",
+			r.Response.Request.Method, sanitizeURL(r.Response.Request.URL),
+			r.Response.StatusCode, r.Message, r.Errors)
+	}
+
+	if r.Response != nil {
+		return fmt.Sprintf("%d %v %+v", r.Response.StatusCode, r.Message, r.Errors)
+	}
+
+	return fmt.Sprintf("%v %+v", r.Message, r.Errors)
 }
 
 // Is returns whether the provided error equals this error.
@@ -1122,7 +1166,7 @@ func (ae *AcceptedError) Is(target error) bool {
 }
 
 // AbuseRateLimitError occurs when GitHub returns 403 Forbidden response with the
-// "documentation_url" field value equal to "https://docs.github.com/en/rest/overview/resources-in-the-rest-api#secondary-rate-limits".
+// "documentation_url" field value equal to "https://docs.github.com/rest/overview/rate-limits-for-the-rest-api#about-secondary-rate-limits".
 type AbuseRateLimitError struct {
 	Response *http.Response // HTTP response that caused this error
 	Message  string         `json:"message"` // error message
@@ -1185,7 +1229,7 @@ GitHub error responses structure are often undocumented and inconsistent.
 Sometimes error is just a simple string (Issue #540).
 In such cases, Message represents an error message as a workaround.
 
-GitHub API docs: https://docs.github.com/en/rest/#client-errors
+GitHub API docs: https://docs.github.com/rest/#client-errors
 */
 type Error struct {
 	Resource string `json:"resource"` // resource on which the error occurred
@@ -1248,7 +1292,7 @@ func CheckResponse(r *http.Response) error {
 		}
 	case r.StatusCode == http.StatusForbidden &&
 		(strings.HasSuffix(errorResponse.DocumentationURL, "#abuse-rate-limits") ||
-			strings.HasSuffix(errorResponse.DocumentationURL, "#secondary-rate-limits")):
+			strings.HasSuffix(errorResponse.DocumentationURL, "secondary-rate-limits")):
 		abuseRateLimitError := &AbuseRateLimitError{
 			Response: errorResponse.Response,
 			Message:  errorResponse.Message,
@@ -1281,150 +1325,78 @@ func parseBoolResponse(err error) (bool, error) {
 	return false, err
 }
 
-// Rate represents the rate limit for the current client.
-type Rate struct {
-	// The number of requests per hour the client is currently limited to.
-	Limit int `json:"limit"`
-
-	// The number of remaining requests the client can make this hour.
-	Remaining int `json:"remaining"`
-
-	// The time at which the current rate limit will reset.
-	Reset Timestamp `json:"reset"`
-}
-
-func (r Rate) String() string {
-	return Stringify(r)
-}
-
-// RateLimits represents the rate limits for the current client.
-type RateLimits struct {
-	// The rate limit for non-search API requests. Unauthenticated
-	// requests are limited to 60 per hour. Authenticated requests are
-	// limited to 5,000 per hour.
-	//
-	// GitHub API docs: https://docs.github.com/en/rest/overview/resources-in-the-rest-api#rate-limiting
-	Core *Rate `json:"core"`
-
-	// The rate limit for search API requests. Unauthenticated requests
-	// are limited to 10 requests per minutes. Authenticated requests are
-	// limited to 30 per minute.
-	//
-	// GitHub API docs: https://docs.github.com/en/rest/search#rate-limit
-	Search *Rate `json:"search"`
-
-	// GitHub API docs: https://docs.github.com/en/graphql/overview/resource-limitations#rate-limit
-	GraphQL *Rate `json:"graphql"`
-
-	// GitHub API dos: https://docs.github.com/en/rest/rate-limit
-	IntegrationManifest *Rate `json:"integration_manifest"`
-
-	SourceImport              *Rate `json:"source_import"`
-	CodeScanningUpload        *Rate `json:"code_scanning_upload"`
-	ActionsRunnerRegistration *Rate `json:"actions_runner_registration"`
-	SCIM                      *Rate `json:"scim"`
-}
-
-func (r RateLimits) String() string {
-	return Stringify(r)
-}
-
-type rateLimitCategory uint8
+type RateLimitCategory uint8
 
 const (
-	coreCategory rateLimitCategory = iota
-	searchCategory
-	graphqlCategory
-	integrationManifestCategory
-	sourceImportCategory
-	codeScanningUploadCategory
-	actionsRunnerRegistrationCategory
-	scimCategory
+	CoreCategory RateLimitCategory = iota
+	SearchCategory
+	GraphqlCategory
+	IntegrationManifestCategory
+	SourceImportCategory
+	CodeScanningUploadCategory
+	ActionsRunnerRegistrationCategory
+	ScimCategory
+	DependencySnapshotsCategory
+	CodeSearchCategory
+	AuditLogCategory
 
-	categories // An array of this length will be able to contain all rate limit categories.
+	Categories // An array of this length will be able to contain all rate limit categories.
 )
 
-// category returns the rate limit category of the endpoint, determined by HTTP method and Request.URL.Path.
-func category(method, path string) rateLimitCategory {
+// GetRateLimitCategory returns the rate limit RateLimitCategory of the endpoint, determined by HTTP method and Request.URL.Path.
+func GetRateLimitCategory(method, path string) RateLimitCategory {
 	switch {
-	// https://docs.github.com/en/rest/rate-limit#about-rate-limits
+	// https://docs.github.com/rest/rate-limit#about-rate-limits
 	default:
 		// NOTE: coreCategory is returned for actionsRunnerRegistrationCategory too,
 		// because no API found for this category.
-		return coreCategory
+		return CoreCategory
+
+	// https://docs.github.com/en/rest/search/search#search-code
+	case strings.HasPrefix(path, "/search/code") &&
+		method == http.MethodGet:
+		return CodeSearchCategory
+
 	case strings.HasPrefix(path, "/search/"):
-		return searchCategory
+		return SearchCategory
 	case path == "/graphql":
-		return graphqlCategory
+		return GraphqlCategory
 	case strings.HasPrefix(path, "/app-manifests/") &&
 		strings.HasSuffix(path, "/conversions") &&
 		method == http.MethodPost:
-		return integrationManifestCategory
+		return IntegrationManifestCategory
 
-	// https://docs.github.com/en/rest/migrations/source-imports#start-an-import
+	// https://docs.github.com/rest/migrations/source-imports#start-an-import
 	case strings.HasPrefix(path, "/repos/") &&
 		strings.HasSuffix(path, "/import") &&
 		method == http.MethodPut:
-		return sourceImportCategory
+		return SourceImportCategory
 
-	// https://docs.github.com/en/rest/code-scanning#upload-an-analysis-as-sarif-data
+	// https://docs.github.com/rest/code-scanning#upload-an-analysis-as-sarif-data
 	case strings.HasSuffix(path, "/code-scanning/sarifs"):
-		return codeScanningUploadCategory
+		return CodeScanningUploadCategory
 
-	// https://docs.github.com/en/enterprise-cloud@latest/rest/scim
+	// https://docs.github.com/enterprise-cloud@latest/rest/scim
 	case strings.HasPrefix(path, "/scim/"):
-		return scimCategory
+		return ScimCategory
+
+	// https://docs.github.com/en/rest/dependency-graph/dependency-submission#create-a-snapshot-of-dependencies-for-a-repository
+	case strings.HasPrefix(path, "/repos/") &&
+		strings.HasSuffix(path, "/dependency-graph/snapshots") &&
+		method == http.MethodPost:
+		return DependencySnapshotsCategory
+
+	// https://docs.github.com/en/enterprise-cloud@latest/rest/orgs/orgs?apiVersion=2022-11-28#get-the-audit-log-for-an-organization
+	case strings.HasSuffix(path, "/audit-log"):
+		return AuditLogCategory
 	}
 }
 
 // RateLimits returns the rate limits for the current client.
+//
+// Deprecated: Use RateLimitService.Get instead.
 func (c *Client) RateLimits(ctx context.Context) (*RateLimits, *Response, error) {
-	req, err := c.NewRequest("GET", "rate_limit", nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	response := new(struct {
-		Resources *RateLimits `json:"resources"`
-	})
-
-	// This resource is not subject to rate limits.
-	ctx = context.WithValue(ctx, bypassRateLimitCheck, true)
-	resp, err := c.Do(ctx, req, response)
-	if err != nil {
-		return nil, resp, err
-	}
-
-	if response.Resources != nil {
-		c.rateMu.Lock()
-		if response.Resources.Core != nil {
-			c.rateLimits[coreCategory] = *response.Resources.Core
-		}
-		if response.Resources.Search != nil {
-			c.rateLimits[searchCategory] = *response.Resources.Search
-		}
-		if response.Resources.GraphQL != nil {
-			c.rateLimits[graphqlCategory] = *response.Resources.GraphQL
-		}
-		if response.Resources.IntegrationManifest != nil {
-			c.rateLimits[integrationManifestCategory] = *response.Resources.IntegrationManifest
-		}
-		if response.Resources.SourceImport != nil {
-			c.rateLimits[sourceImportCategory] = *response.Resources.SourceImport
-		}
-		if response.Resources.CodeScanningUpload != nil {
-			c.rateLimits[codeScanningUploadCategory] = *response.Resources.CodeScanningUpload
-		}
-		if response.Resources.ActionsRunnerRegistration != nil {
-			c.rateLimits[actionsRunnerRegistrationCategory] = *response.Resources.ActionsRunnerRegistration
-		}
-		if response.Resources.SCIM != nil {
-			c.rateLimits[scimCategory] = *response.Resources.SCIM
-		}
-		c.rateMu.Unlock()
-	}
-
-	return response.Resources, resp, nil
+	return c.RateLimit.Get(ctx)
 }
 
 func setCredentialsAsHeaders(req *http.Request, id, secret string) *http.Request {
@@ -1458,7 +1430,7 @@ that need to use a higher rate limit associated with your OAuth application.
 This will add the client id and secret as a base64-encoded string in the format
 ClientID:ClientSecret and apply it as an "Authorization": "Basic" header.
 
-See https://docs.github.com/en/rest/#unauthenticated-rate-limited-requests for
+See https://docs.github.com/rest/#unauthenticated-rate-limited-requests for
 more information.
 */
 type UnauthenticatedRateLimitedTransport struct {
@@ -1562,6 +1534,20 @@ func formatRateReset(d time.Duration) string {
 		return fmt.Sprintf("[rate limit was reset %v ago]", timeString)
 	}
 	return fmt.Sprintf("[rate reset in %v]", timeString)
+}
+
+func sleepUntilResetWithBuffer(ctx context.Context, reset time.Time) error {
+	buffer := time.Second
+	timer := time.NewTimer(time.Until(reset) + buffer)
+	select {
+	case <-ctx.Done():
+		if !timer.Stop() {
+			<-timer.C
+		}
+		return ctx.Err()
+	case <-timer.C:
+	}
+	return nil
 }
 
 // When using roundTripWithOptionalFollowRedirect, note that it

@@ -648,6 +648,7 @@ func TestWorkflowRun_Marshal(t *testing.T) {
 		NodeID:     String("nid"),
 		HeadBranch: String("hb"),
 		HeadSHA:    String("hs"),
+		Path:       String("p"),
 		RunNumber:  Int(1),
 		RunAttempt: Int(1),
 		Event:      String("e"),
@@ -761,6 +762,13 @@ func TestWorkflowRun_Marshal(t *testing.T) {
 			SuspendedAt:     &Timestamp{referenceTime},
 			URL:             String("u2"),
 		},
+		ReferencedWorkflows: []*ReferencedWorkflow{
+			{
+				Path: String("rwfp"),
+				SHA:  String("rwfsha"),
+				Ref:  String("rwfref"),
+			},
+		},
 	}
 
 	want := `{
@@ -769,6 +777,7 @@ func TestWorkflowRun_Marshal(t *testing.T) {
 		"node_id": "nid",
 		"head_branch": "hb",
 		"head_sha": "hs",
+		"path": "p",
 		"run_number": 1,
 		"run_attempt": 1,
 		"event": "e",
@@ -881,7 +890,14 @@ func TestWorkflowRun_Marshal(t *testing.T) {
 			"created_at": ` + referenceTimeStr + `,
 			"suspended_at": ` + referenceTimeStr + `,
 			"url": "u2"
-		}
+		},
+		"referenced_workflows": [
+			{
+				"path": "rwfp",
+				"sha": "rwfsha",
+				"ref": "rwfref"
+			}
+		]
 	}`
 
 	testJSONMarshal(t, u, want)

@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-github/v55/github"
+	"github.com/google/go-github/v63/github"
 )
 
 func TestRepositories_CRUD(t *testing.T) {
@@ -103,7 +103,7 @@ func TestRepositories_EditBranches(t *testing.T) {
 	protectionRequest := &github.ProtectionRequest{
 		RequiredStatusChecks: &github.RequiredStatusChecks{
 			Strict:   true,
-			Contexts: []string{"continuous-integration"},
+			Contexts: &[]string{"continuous-integration"},
 		},
 		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 			DismissStaleReviews: true,
@@ -126,7 +126,7 @@ func TestRepositories_EditBranches(t *testing.T) {
 	want := &github.Protection{
 		RequiredStatusChecks: &github.RequiredStatusChecks{
 			Strict:   true,
-			Contexts: []string{"continuous-integration"},
+			Contexts: &[]string{"continuous-integration"},
 		},
 		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcement{
 			DismissStaleReviews:          true,
@@ -157,29 +157,31 @@ func TestRepositories_EditBranches(t *testing.T) {
 	}
 }
 
-func TestRepositories_List(t *testing.T) {
-	if !checkAuth("TestRepositories_List") {
+func TestRepositories_ListByAuthenticatedUser(t *testing.T) {
+	if !checkAuth("TestRepositories_ListByAuthenticatedUser") {
 		return
 	}
 
-	_, _, err := client.Repositories.List(context.Background(), "", nil)
+	_, _, err := client.Repositories.ListByAuthenticatedUser(context.Background(), nil)
 	if err != nil {
-		t.Fatalf("Repositories.List('') returned error: %v", err)
+		t.Fatalf("Repositories.ListByAuthenticatedUser() returned error: %v", err)
+	}
+}
+
+func TestRepositories_ListByUser(t *testing.T) {
+	_, _, err := client.Repositories.ListByUser(context.Background(), "google", nil)
+	if err != nil {
+		t.Fatalf("Repositories.ListByUser('google') returned error: %v", err)
 	}
 
-	_, _, err = client.Repositories.List(context.Background(), "google", nil)
-	if err != nil {
-		t.Fatalf("Repositories.List('google') returned error: %v", err)
-	}
-
-	opt := github.RepositoryListOptions{Sort: "created"}
-	repos, _, err := client.Repositories.List(context.Background(), "google", &opt)
+	opt := github.RepositoryListByUserOptions{Sort: "created"}
+	repos, _, err := client.Repositories.ListByUser(context.Background(), "google", &opt)
 	if err != nil {
 		t.Fatalf("Repositories.List('google') with Sort opt returned error: %v", err)
 	}
 	for i, repo := range repos {
 		if i > 0 && (*repos[i-1].CreatedAt).Time.Before((*repo.CreatedAt).Time) {
-			t.Fatalf("Repositories.List('google') with default descending Sort returned incorrect order")
+			t.Fatalf("Repositories.ListByUser('google') with default descending Sort returned incorrect order")
 		}
 	}
 }

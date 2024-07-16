@@ -357,9 +357,8 @@ func TestBranchWebHookPayload_Marshal(t *testing.T) {
 		Organization: &Organization{
 			ID: Int64(22),
 		},
-		Pusher: &User{
+		Pusher: &CommitAuthor{
 			Login: String("rd@yahoo.com"),
-			ID:    Int64(112),
 		},
 		Repo: &PushEventRepository{
 			ID:     Int64(321),
@@ -421,8 +420,7 @@ func TestBranchWebHookPayload_Marshal(t *testing.T) {
 			"id" : 22
 		},
 		"pusher":{
-			"login": "rd@yahoo.com",
-			"id": 112
+			"username": "rd@yahoo.com"
 		},
 		"repository":{
 			"id": 321,
@@ -504,9 +502,7 @@ func TestBranchCreateHookRequest_Marshal(t *testing.T) {
 		Name:   "abc",
 		Events: []string{"1", "2", "3"},
 		Active: Bool(true),
-		Config: map[string]interface{}{
-			"thing": "@123",
-		},
+		Config: &HookConfig{ContentType: String("json")},
 	}
 
 	want := `{
@@ -514,7 +510,7 @@ func TestBranchCreateHookRequest_Marshal(t *testing.T) {
 		"active": true,
 		"events": ["1","2","3"],
 		"config":{
-			"thing": "@123"
+			"content_type": "json"
 		}
 	}`
 
@@ -536,9 +532,7 @@ func TestBranchHook_Marshal(t *testing.T) {
 		LastResponse: map[string]interface{}{
 			"item": "item",
 		},
-		Config: map[string]interface{}{
-			"thing": "@123",
-		},
+		Config: &HookConfig{ContentType: String("json")},
 		Events: []string{"1", "2", "3"},
 		Active: Bool(true),
 	}
@@ -556,7 +550,7 @@ func TestBranchHook_Marshal(t *testing.T) {
 			"item": "item"
 		},
 		"config":{
-			"thing": "@123"
+			"content_type": "json"
 		},
 		"events": ["1","2","3"],
 		"active": true		

@@ -70,7 +70,9 @@ type ListWorkflowJobsOptions struct {
 
 // ListWorkflowJobs lists all jobs for a workflow run.
 //
-// GitHub API docs: https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run
+// GitHub API docs: https://docs.github.com/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run
+//
+//meta:operation GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
 func (s *ActionsService) ListWorkflowJobs(ctx context.Context, owner, repo string, runID int64, opts *ListWorkflowJobsOptions) (*Jobs, *Response, error) {
 	u := fmt.Sprintf("repos/%s/%s/actions/runs/%v/jobs", owner, repo, runID)
 	u, err := addOptions(u, opts)
@@ -92,9 +94,37 @@ func (s *ActionsService) ListWorkflowJobs(ctx context.Context, owner, repo strin
 	return jobs, resp, nil
 }
 
+// ListWorkflowJobsAttempt lists jobs for a workflow run Attempt.
+//
+// GitHub API docs: https://docs.github.com/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt
+//
+//meta:operation GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs
+func (s *ActionsService) ListWorkflowJobsAttempt(ctx context.Context, owner, repo string, runID, attemptNumber int64, opts *ListOptions) (*Jobs, *Response, error) {
+	u := fmt.Sprintf("repos/%s/%s/actions/runs/%v/attempts/%v/jobs", owner, repo, runID, attemptNumber)
+	u, err := addOptions(u, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	req, err := s.client.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	jobs := new(Jobs)
+	resp, err := s.client.Do(ctx, req, &jobs)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	return jobs, resp, nil
+}
+
 // GetWorkflowJobByID gets a specific job in a workflow run by ID.
 //
-// GitHub API docs: https://docs.github.com/en/rest/actions/workflow-jobs#get-a-job-for-a-workflow-run
+// GitHub API docs: https://docs.github.com/rest/actions/workflow-jobs#get-a-job-for-a-workflow-run
+//
+//meta:operation GET /repos/{owner}/{repo}/actions/jobs/{job_id}
 func (s *ActionsService) GetWorkflowJobByID(ctx context.Context, owner, repo string, jobID int64) (*WorkflowJob, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/actions/jobs/%v", owner, repo, jobID)
 
@@ -114,7 +144,9 @@ func (s *ActionsService) GetWorkflowJobByID(ctx context.Context, owner, repo str
 
 // GetWorkflowJobLogs gets a redirect URL to download a plain text file of logs for a workflow job.
 //
-// GitHub API docs: https://docs.github.com/en/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run
+// GitHub API docs: https://docs.github.com/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run
+//
+//meta:operation GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs
 func (s *ActionsService) GetWorkflowJobLogs(ctx context.Context, owner, repo string, jobID int64, maxRedirects int) (*url.URL, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/actions/jobs/%v/logs", owner, repo, jobID)
 

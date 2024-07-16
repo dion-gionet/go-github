@@ -18,6 +18,9 @@ type IssueEvent struct {
 	// The User that generated this event.
 	Actor *User `json:"actor,omitempty"`
 
+	// The action corresponding to the event.
+	Action string `json:"action,omitempty"`
+
 	// Event identifies the actual type of Event that occurred. Possible
 	// values are:
 	//
@@ -74,6 +77,7 @@ type IssueEvent struct {
 	Issue     *Issue     `json:"issue,omitempty"`
 
 	// Only present on certain events; see above.
+	Repository            *Repository      `json:"repository,omitempty"`
 	Assignee              *User            `json:"assignee,omitempty"`
 	Assigner              *User            `json:"assigner,omitempty"`
 	CommitID              *string          `json:"commit_id,omitempty"`
@@ -101,7 +105,9 @@ type DismissedReview struct {
 
 // ListIssueEvents lists events for the specified issue.
 //
-// GitHub API docs: https://docs.github.com/en/rest/issues/events#list-issue-events
+// GitHub API docs: https://docs.github.com/rest/issues/events#list-issue-events
+//
+//meta:operation GET /repos/{owner}/{repo}/issues/{issue_number}/events
 func (s *IssuesService) ListIssueEvents(ctx context.Context, owner, repo string, number int, opts *ListOptions) ([]*IssueEvent, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/issues/%v/events", owner, repo, number)
 	u, err := addOptions(u, opts)
@@ -127,7 +133,9 @@ func (s *IssuesService) ListIssueEvents(ctx context.Context, owner, repo string,
 
 // ListRepositoryEvents lists events for the specified repository.
 //
-// GitHub API docs: https://docs.github.com/en/rest/issues/events#list-issue-events-for-a-repository
+// GitHub API docs: https://docs.github.com/rest/issues/events#list-issue-events-for-a-repository
+//
+//meta:operation GET /repos/{owner}/{repo}/issues/events
 func (s *IssuesService) ListRepositoryEvents(ctx context.Context, owner, repo string, opts *ListOptions) ([]*IssueEvent, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/issues/events", owner, repo)
 	u, err := addOptions(u, opts)
@@ -151,7 +159,9 @@ func (s *IssuesService) ListRepositoryEvents(ctx context.Context, owner, repo st
 
 // GetEvent returns the specified issue event.
 //
-// GitHub API docs: https://docs.github.com/en/rest/issues/events#get-an-issue-event
+// GitHub API docs: https://docs.github.com/rest/issues/events#get-an-issue-event
+//
+//meta:operation GET /repos/{owner}/{repo}/issues/events/{event_id}
 func (s *IssuesService) GetEvent(ctx context.Context, owner, repo string, id int64) (*IssueEvent, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/issues/events/%v", owner, repo, id)
 

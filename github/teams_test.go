@@ -872,7 +872,7 @@ func TestTeamsService_AddTeamRepoByID_noAccess(t *testing.T) {
 	ctx := context.Background()
 	_, err := client.Teams.AddTeamRepoByID(ctx, 1, 1, "owner", "repo", nil)
 	if err == nil {
-		t.Errorf("Expcted error to be returned")
+		t.Errorf("Expected error to be returned")
 	}
 }
 
@@ -888,7 +888,7 @@ func TestTeamsService_AddTeamRepoBySlug_noAccess(t *testing.T) {
 	ctx := context.Background()
 	_, err := client.Teams.AddTeamRepoBySlug(ctx, "org", "slug", "owner", "repo", nil)
 	if err == nil {
-		t.Errorf("Expcted error to be returned")
+		t.Errorf("Expected error to be returned")
 	}
 }
 
@@ -1590,14 +1590,15 @@ func TestNewTeam_Marshal(t *testing.T) {
 	testJSONMarshal(t, &NewTeam{}, "{}")
 
 	u := &NewTeam{
-		Name:         "n",
-		Description:  String("d"),
-		Maintainers:  []string{"m1", "m2"},
-		RepoNames:    []string{"repo1", "repo2"},
-		ParentTeamID: Int64(1),
-		Permission:   String("perm"),
-		Privacy:      String("p"),
-		LDAPDN:       String("l"),
+		Name:                "n",
+		Description:         String("d"),
+		Maintainers:         []string{"m1", "m2"},
+		RepoNames:           []string{"repo1", "repo2"},
+		NotificationSetting: String("notifications_enabled"),
+		ParentTeamID:        Int64(1),
+		Permission:          String("perm"),
+		Privacy:             String("p"),
+		LDAPDN:              String("l"),
 	}
 
 	want := `{
@@ -1606,6 +1607,7 @@ func TestNewTeam_Marshal(t *testing.T) {
 		"maintainers":    ["m1", "m2"],
 		"repo_names":     ["repo1", "repo2"],
 		"parent_team_id": 1,
+		"notification_setting": "notifications_enabled",
 		"permission":     "perm",
 		"privacy":        "p",
 		"ldap_dn":        "l"

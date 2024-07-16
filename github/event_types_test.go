@@ -91,6 +91,9 @@ func TestEditChange_Marshal_Repo(t *testing.T) {
 				From: String("old-repo-name"),
 			},
 		},
+		Topics: &EditTopics{
+			From: []string{"topic1", "topic2"},
+		},
 	}
 
 	want := `{
@@ -98,6 +101,12 @@ func TestEditChange_Marshal_Repo(t *testing.T) {
 			"name": {
 				"from": "old-repo-name"
 			}
+		},
+		"topics": {
+			"from": [
+				"topic1",
+				"topic2"
+			]
 		}
 	}`
 
@@ -3777,14 +3786,11 @@ func TestPushEvent_Marshal(t *testing.T) {
 		Compare:      String("a"),
 		Repo:         &PushEventRepository{ID: Int64(1)},
 		HeadCommit:   &HeadCommit{ID: String("id")},
-		Pusher: &User{
-			Login:     String("l"),
-			ID:        Int64(1),
-			NodeID:    String("n"),
-			URL:       String("u"),
-			ReposURL:  String("r"),
-			EventsURL: String("e"),
-			AvatarURL: String("a"),
+		Pusher: &CommitAuthor{
+			Login: String("l"),
+			Date:  &Timestamp{referenceTime},
+			Name:  String("n"),
+			Email: String("e"),
 		},
 		Sender: &User{
 			Login:     String("l"),
@@ -3937,13 +3943,10 @@ func TestPushEvent_Marshal(t *testing.T) {
 			"id": "id"
 		},
 		"pusher": {
-			"login": "l",
-			"id": 1,
-			"node_id": "n",
-			"avatar_url": "a",
-			"url": "u",
-			"events_url": "e",
-			"repos_url": "r"
+			"date": ` + referenceTimeStr + `,
+			"name": "n",
+			"email": "e",
+			"username": "l"
 		},
 		"sender": {
 			"login": "l",
@@ -7688,6 +7691,7 @@ func TestPingEvent_Marshal(t *testing.T) {
 
 	l := make(map[string]interface{})
 	l["key"] = "value"
+	hookConfig := new(HookConfig)
 
 	u := &PingEvent{
 		Zen:    String("z"),
@@ -7702,7 +7706,7 @@ func TestPingEvent_Marshal(t *testing.T) {
 			TestURL:      String("tu"),
 			PingURL:      String("pu"),
 			LastResponse: l,
-			Config:       l,
+			Config:       hookConfig,
 			Events:       []string{"a"},
 			Active:       Bool(true),
 		},
@@ -9102,6 +9106,16 @@ func TestMemberEvent_Marshal(t *testing.T) {
 			EventsURL: String("e"),
 			AvatarURL: String("a"),
 		},
+		Changes: &MemberChanges{
+			Permission: &MemberChangesPermission{
+				From: String("f"),
+				To:   String("t"),
+			},
+			RoleName: &MemberChangesRoleName{
+				From: String("f"),
+				To:   String("t"),
+			},
+		},
 		Repo: &Repository{
 			ID:   Int64(1),
 			URL:  String("s"),
@@ -9221,6 +9235,16 @@ func TestMemberEvent_Marshal(t *testing.T) {
 			"url": "u",
 			"events_url": "e",
 			"repos_url": "r"
+		},
+		"changes": {
+			"permission": {
+				"from": "f",
+				"to": "t"
+			},
+			"role_name": {
+				"from": "f",
+				"to": "t"
+			}
 		},
 		"repository": {
 			"id": 1,
@@ -12162,6 +12186,9 @@ func TestMetaEvent_Marshal(t *testing.T) {
 
 	v := make(map[string]interface{})
 	v["a"] = "b"
+	hookConfig := &HookConfig{
+		ContentType: String("json"),
+	}
 
 	u := &MetaEvent{
 		Action: String("a"),
@@ -12176,7 +12203,7 @@ func TestMetaEvent_Marshal(t *testing.T) {
 			TestURL:      String("tu"),
 			PingURL:      String("pu"),
 			LastResponse: v,
-			Config:       v,
+			Config:       hookConfig,
 			Events:       []string{"a"},
 			Active:       Bool(true),
 		},
@@ -12198,7 +12225,7 @@ func TestMetaEvent_Marshal(t *testing.T) {
 				"a": "b"
 			},
 			"config": {
-				"a": "b"
+				"content_type": "json"
 			},
 			"events": [
 				"a"

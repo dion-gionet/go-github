@@ -388,15 +388,18 @@ func TestDiscussionComment_String(t *testing.T) {
 
 func TestDraftReviewComment_String(t *testing.T) {
 	v := DraftReviewComment{
-		Path:      String(""),
-		Position:  Int(0),
-		Body:      String(""),
-		StartSide: String(""),
-		Side:      String(""),
-		StartLine: Int(0),
-		Line:      Int(0),
+		Path:        String(""),
+		Position:    Int(0),
+		Body:        String(""),
+		CommitID:    String(""),
+		InReplyTo:   Int64(0),
+		SubjectType: String(""),
+		StartSide:   String(""),
+		Side:        String(""),
+		StartLine:   Int(0),
+		Line:        Int(0),
 	}
-	want := `github.DraftReviewComment{Path:"", Position:0, Body:"", StartSide:"", Side:"", StartLine:0, Line:0}`
+	want := `github.DraftReviewComment{Path:"", Position:0, Body:"", CommitID:"", InReplyTo:0, SubjectType:"", StartSide:"", Side:"", StartLine:0, Line:0}`
 	if got := v.String(); got != want {
 		t.Errorf("DraftReviewComment.String = %v, want %v", got, want)
 	}
@@ -617,10 +620,11 @@ func TestHook_String(t *testing.T) {
 		Name:      String(""),
 		TestURL:   String(""),
 		PingURL:   String(""),
+		Config:    &HookConfig{},
 		Events:    []string{""},
 		Active:    Bool(false),
 	}
-	want := `github.Hook{CreatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, UpdatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, URL:"", ID:0, Type:"", Name:"", TestURL:"", PingURL:"", Events:[""], Active:false}`
+	want := `github.Hook{CreatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, UpdatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, URL:"", ID:0, Type:"", Name:"", TestURL:"", PingURL:"", Config:github.HookConfig{}, Events:[""], Active:false}`
 	if got := v.String(); got != want {
 		t.Errorf("Hook.String = %v, want %v", got, want)
 	}
@@ -768,9 +772,10 @@ func TestIssue_String(t *testing.T) {
 		Repository:        &Repository{},
 		Reactions:         &Reactions{},
 		NodeID:            String(""),
+		Draft:             Bool(false),
 		ActiveLockReason:  String(""),
 	}
-	want := `github.Issue{ID:0, Number:0, State:"", StateReason:"", Locked:false, Title:"", Body:"", AuthorAssociation:"", User:github.User{}, Assignee:github.User{}, Comments:0, ClosedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, CreatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, UpdatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, ClosedBy:github.User{}, URL:"", HTMLURL:"", CommentsURL:"", EventsURL:"", LabelsURL:"", RepositoryURL:"", Milestone:github.Milestone{}, PullRequestLinks:github.PullRequestLinks{}, Repository:github.Repository{}, Reactions:github.Reactions{}, NodeID:"", ActiveLockReason:""}`
+	want := `github.Issue{ID:0, Number:0, State:"", StateReason:"", Locked:false, Title:"", Body:"", AuthorAssociation:"", User:github.User{}, Assignee:github.User{}, Comments:0, ClosedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, CreatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, UpdatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, ClosedBy:github.User{}, URL:"", HTMLURL:"", CommentsURL:"", EventsURL:"", LabelsURL:"", RepositoryURL:"", Milestone:github.Milestone{}, PullRequestLinks:github.PullRequestLinks{}, Repository:github.Repository{}, Reactions:github.Reactions{}, NodeID:"", Draft:false, ActiveLockReason:""}`
 	if got := v.String(); got != want {
 		t.Errorf("Issue.String = %v, want %v", got, want)
 	}
@@ -960,16 +965,17 @@ func TestMilestoneStats_String(t *testing.T) {
 
 func TestNewTeam_String(t *testing.T) {
 	v := NewTeam{
-		Name:         "",
-		Description:  String(""),
-		Maintainers:  []string{""},
-		RepoNames:    []string{""},
-		ParentTeamID: Int64(0),
-		Permission:   String(""),
-		Privacy:      String(""),
-		LDAPDN:       String(""),
+		Name:                "",
+		Description:         String(""),
+		Maintainers:         []string{""},
+		RepoNames:           []string{""},
+		ParentTeamID:        Int64(0),
+		NotificationSetting: String(""),
+		Permission:          String(""),
+		Privacy:             String(""),
+		LDAPDN:              String(""),
 	}
-	want := `github.NewTeam{Name:"", Description:"", Maintainers:[""], RepoNames:[""], ParentTeamID:0, Permission:"", Privacy:"", LDAPDN:""}`
+	want := `github.NewTeam{Name:"", Description:"", Maintainers:[""], RepoNames:[""], ParentTeamID:0, NotificationSetting:"", Permission:"", Privacy:"", LDAPDN:""}`
 	if got := v.String(); got != want {
 		t.Errorf("NewTeam.String = %v, want %v", got, want)
 	}
@@ -1050,15 +1056,16 @@ func TestOrganization_String(t *testing.T) {
 		DependencyGraphEnabledForNewRepos:              Bool(false),
 		SecretScanningEnabledForNewRepos:               Bool(false),
 		SecretScanningPushProtectionEnabledForNewRepos: Bool(false),
-		URL:              String(""),
-		EventsURL:        String(""),
-		HooksURL:         String(""),
-		IssuesURL:        String(""),
-		MembersURL:       String(""),
-		PublicMembersURL: String(""),
-		ReposURL:         String(""),
+		SecretScanningValidityChecksEnabled:            Bool(false),
+		URL:                                            String(""),
+		EventsURL:                                      String(""),
+		HooksURL:                                       String(""),
+		IssuesURL:                                      String(""),
+		MembersURL:                                     String(""),
+		PublicMembersURL:                               String(""),
+		ReposURL:                                       String(""),
 	}
-	want := `github.Organization{Login:"", ID:0, NodeID:"", AvatarURL:"", HTMLURL:"", Name:"", Company:"", Blog:"", Location:"", Email:"", TwitterUsername:"", Description:"", PublicRepos:0, PublicGists:0, Followers:0, Following:0, CreatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, UpdatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, TotalPrivateRepos:0, OwnedPrivateRepos:0, PrivateGists:0, DiskUsage:0, Collaborators:0, BillingEmail:"", Type:"", Plan:github.Plan{}, TwoFactorRequirementEnabled:false, IsVerified:false, HasOrganizationProjects:false, HasRepositoryProjects:false, DefaultRepoPermission:"", DefaultRepoSettings:"", MembersCanCreateRepos:false, MembersCanCreatePublicRepos:false, MembersCanCreatePrivateRepos:false, MembersCanCreateInternalRepos:false, MembersCanForkPrivateRepos:false, MembersAllowedRepositoryCreationType:"", MembersCanCreatePages:false, MembersCanCreatePublicPages:false, MembersCanCreatePrivatePages:false, WebCommitSignoffRequired:false, AdvancedSecurityEnabledForNewRepos:false, DependabotAlertsEnabledForNewRepos:false, DependabotSecurityUpdatesEnabledForNewRepos:false, DependencyGraphEnabledForNewRepos:false, SecretScanningEnabledForNewRepos:false, SecretScanningPushProtectionEnabledForNewRepos:false, URL:"", EventsURL:"", HooksURL:"", IssuesURL:"", MembersURL:"", PublicMembersURL:"", ReposURL:""}`
+	want := `github.Organization{Login:"", ID:0, NodeID:"", AvatarURL:"", HTMLURL:"", Name:"", Company:"", Blog:"", Location:"", Email:"", TwitterUsername:"", Description:"", PublicRepos:0, PublicGists:0, Followers:0, Following:0, CreatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, UpdatedAt:github.Timestamp{0001-01-01 00:00:00 +0000 UTC}, TotalPrivateRepos:0, OwnedPrivateRepos:0, PrivateGists:0, DiskUsage:0, Collaborators:0, BillingEmail:"", Type:"", Plan:github.Plan{}, TwoFactorRequirementEnabled:false, IsVerified:false, HasOrganizationProjects:false, HasRepositoryProjects:false, DefaultRepoPermission:"", DefaultRepoSettings:"", MembersCanCreateRepos:false, MembersCanCreatePublicRepos:false, MembersCanCreatePrivateRepos:false, MembersCanCreateInternalRepos:false, MembersCanForkPrivateRepos:false, MembersAllowedRepositoryCreationType:"", MembersCanCreatePages:false, MembersCanCreatePublicPages:false, MembersCanCreatePrivatePages:false, WebCommitSignoffRequired:false, AdvancedSecurityEnabledForNewRepos:false, DependabotAlertsEnabledForNewRepos:false, DependabotSecurityUpdatesEnabledForNewRepos:false, DependencyGraphEnabledForNewRepos:false, SecretScanningEnabledForNewRepos:false, SecretScanningPushProtectionEnabledForNewRepos:false, SecretScanningValidityChecksEnabled:false, URL:"", EventsURL:"", HooksURL:"", IssuesURL:"", MembersURL:"", PublicMembersURL:"", ReposURL:""}`
 	if got := v.String(); got != want {
 		t.Errorf("Organization.String = %v, want %v", got, want)
 	}
@@ -1425,12 +1432,12 @@ func TestPushEvent_String(t *testing.T) {
 		Compare:      String(""),
 		Repo:         &PushEventRepository{},
 		HeadCommit:   &HeadCommit{},
-		Pusher:       &User{},
+		Pusher:       &CommitAuthor{},
 		Sender:       &User{},
 		Installation: &Installation{},
 		Organization: &Organization{},
 	}
-	want := `github.PushEvent{PushID:0, Head:"", Ref:"", Size:0, Before:"", DistinctSize:0, Action:"", After:"", Created:false, Deleted:false, Forced:false, BaseRef:"", Compare:"", Repo:github.PushEventRepository{}, HeadCommit:github.HeadCommit{}, Pusher:github.User{}, Sender:github.User{}, Installation:github.Installation{}, Organization:github.Organization{}}`
+	want := `github.PushEvent{PushID:0, Head:"", Ref:"", Size:0, Before:"", DistinctSize:0, Action:"", After:"", Created:false, Deleted:false, Forced:false, BaseRef:"", Compare:"", Repo:github.PushEventRepository{}, HeadCommit:github.HeadCommit{}, Pusher:github.CommitAuthor{}, Sender:github.User{}, Installation:github.Installation{}, Organization:github.Organization{}}`
 	if got := v.String(); got != want {
 		t.Errorf("PushEvent.String = %v, want %v", got, want)
 	}
@@ -1825,8 +1832,9 @@ func TestSecurityAndAnalysis_String(t *testing.T) {
 		SecretScanning:               &SecretScanning{},
 		SecretScanningPushProtection: &SecretScanningPushProtection{},
 		DependabotSecurityUpdates:    &DependabotSecurityUpdates{},
+		SecretScanningValidityChecks: &SecretScanningValidityChecks{},
 	}
-	want := `github.SecurityAndAnalysis{AdvancedSecurity:github.AdvancedSecurity{}, SecretScanning:github.SecretScanning{}, SecretScanningPushProtection:github.SecretScanningPushProtection{}, DependabotSecurityUpdates:github.DependabotSecurityUpdates{}}`
+	want := `github.SecurityAndAnalysis{AdvancedSecurity:github.AdvancedSecurity{}, SecretScanning:github.SecretScanning{}, SecretScanningPushProtection:github.SecretScanningPushProtection{}, DependabotSecurityUpdates:github.DependabotSecurityUpdates{}, SecretScanningValidityChecks:github.SecretScanningValidityChecks{}}`
 	if got := v.String(); got != want {
 		t.Errorf("SecurityAndAnalysis.String = %v, want %v", got, want)
 	}

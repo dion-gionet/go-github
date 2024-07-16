@@ -469,6 +469,77 @@ func TestAppsService_CreateInstallationTokenWithOptions(t *testing.T) {
 	}
 }
 
+func TestAppsService_CreateInstallationTokenListReposWithOptions(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	installationTokenListRepoOptions := &InstallationTokenListRepoOptions{
+		Repositories: []string{"foo"},
+		Permissions: &InstallationPermissions{
+			Contents: String("write"),
+			Issues:   String("read"),
+		},
+	}
+
+	mux.HandleFunc("/app/installations/1/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+		v := new(InstallationTokenListRepoOptions)
+		assertNilError(t, json.NewDecoder(r.Body).Decode(v))
+
+		if !cmp.Equal(v, installationTokenListRepoOptions) {
+			t.Errorf("request sent %+v, want %+v", v, installationTokenListRepoOptions)
+		}
+
+		testMethod(t, r, "POST")
+		fmt.Fprint(w, `{"token":"t"}`)
+	})
+
+	ctx := context.Background()
+	token, _, err := client.Apps.CreateInstallationTokenListRepos(ctx, 1, installationTokenListRepoOptions)
+	if err != nil {
+		t.Errorf("Apps.CreateInstallationTokenListRepos returned error: %v", err)
+	}
+
+	want := &InstallationToken{Token: String("t")}
+	if !cmp.Equal(token, want) {
+		t.Errorf("Apps.CreateInstallationTokenListRepos returned %+v, want %+v", token, want)
+	}
+}
+
+func TestAppsService_CreateInstallationTokenListReposWithNoOptions(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	mux.HandleFunc("/app/installations/1/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, "POST")
+		fmt.Fprint(w, `{"token":"t"}`)
+	})
+
+	ctx := context.Background()
+	token, _, err := client.Apps.CreateInstallationTokenListRepos(ctx, 1, nil)
+	if err != nil {
+		t.Errorf("Apps.CreateInstallationTokenListRepos returned error: %v", err)
+	}
+
+	want := &InstallationToken{Token: String("t")}
+	if !cmp.Equal(token, want) {
+		t.Errorf("Apps.CreateInstallationTokenListRepos returned %+v, want %+v", token, want)
+	}
+
+	const methodName = "CreateInstallationTokenListRepos"
+	testBadOptions(t, methodName, func() (err error) {
+		_, _, err = client.Apps.CreateInstallationTokenListRepos(ctx, -1, nil)
+		return err
+	})
+
+	testNewRequestAndDoFailure(t, methodName, client, func() (*Response, error) {
+		got, resp, err := client.Apps.CreateInstallationTokenListRepos(ctx, 1, nil)
+		if got != nil {
+			t.Errorf("testNewRequestAndDoFailure %v = %#v, want nil", methodName, got)
+		}
+		return resp, err
+	})
+}
+
 func TestAppsService_CreateAttachement(t *testing.T) {
 	client, mux, _, teardown := setup()
 	defer teardown()
@@ -698,6 +769,7 @@ func TestInstallationPermissions_Marshal(t *testing.T) {
 		Metadata:                      String("md"),
 		Members:                       String("m"),
 		OrganizationAdministration:    String("oa"),
+		OrganizationCustomOrgRoles:    String("ocr"),
 		OrganizationHooks:             String("oh"),
 		OrganizationPlan:              String("op"),
 		OrganizationPreReceiveHooks:   String("opr"),
@@ -733,6 +805,7 @@ func TestInstallationPermissions_Marshal(t *testing.T) {
 		"metadata": "md",
 		"members": "m",
 		"organization_administration": "oa",
+		"organization_custom_org_roles": "ocr",
 		"organization_hooks": "oh",
 		"organization_plan": "op",
 		"organization_pre_receive_hooks": "opr",
@@ -798,6 +871,7 @@ func TestInstallation_Marshal(t *testing.T) {
 		SingleFilePaths:     []string{"s"},
 		Permissions: &InstallationPermissions{
 			Actions:                       String("a"),
+			ActionsVariables:              String("ac"),
 			Administration:                String("ad"),
 			Checks:                        String("c"),
 			Contents:                      String("co"),
@@ -808,6 +882,7 @@ func TestInstallation_Marshal(t *testing.T) {
 			Metadata:                      String("md"),
 			Members:                       String("m"),
 			OrganizationAdministration:    String("oa"),
+			OrganizationCustomOrgRoles:    String("ocr"),
 			OrganizationHooks:             String("oh"),
 			OrganizationPlan:              String("op"),
 			OrganizationPreReceiveHooks:   String("opr"),
@@ -896,6 +971,7 @@ func TestInstallation_Marshal(t *testing.T) {
 		],
 		"permissions": {
 			"actions": "a",
+			"actions_variables": "ac",
 			"administration": "ad",
 			"checks": "c",
 			"contents": "co",
@@ -906,6 +982,7 @@ func TestInstallation_Marshal(t *testing.T) {
 			"metadata": "md",
 			"members": "m",
 			"organization_administration": "oa",
+			"organization_custom_org_roles": "ocr",
 			"organization_hooks": "oh",
 			"organization_plan": "op",
 			"organization_pre_receive_hooks": "opr",
@@ -964,6 +1041,7 @@ func TestInstallationTokenOptions_Marshal(t *testing.T) {
 		RepositoryIDs: []int64{1},
 		Permissions: &InstallationPermissions{
 			Actions:                       String("a"),
+			ActionsVariables:              String("ac"),
 			Administration:                String("ad"),
 			Checks:                        String("c"),
 			Contents:                      String("co"),
@@ -974,6 +1052,7 @@ func TestInstallationTokenOptions_Marshal(t *testing.T) {
 			Metadata:                      String("md"),
 			Members:                       String("m"),
 			OrganizationAdministration:    String("oa"),
+			OrganizationCustomOrgRoles:    String("ocr"),
 			OrganizationHooks:             String("oh"),
 			OrganizationPlan:              String("op"),
 			OrganizationPreReceiveHooks:   String("opr"),
@@ -1002,6 +1081,7 @@ func TestInstallationTokenOptions_Marshal(t *testing.T) {
 		"repository_ids": [1],
 		"permissions": {
 			"actions": "a",
+			"actions_variables": "ac",
 			"administration": "ad",
 			"checks": "c",
 			"contents": "co",
@@ -1012,6 +1092,7 @@ func TestInstallationTokenOptions_Marshal(t *testing.T) {
 			"metadata": "md",
 			"members": "m",
 			"organization_administration": "oa",
+			"organization_custom_org_roles": "ocr",
 			"organization_hooks": "oh",
 			"organization_plan": "op",
 			"organization_pre_receive_hooks": "opr",
@@ -1047,6 +1128,7 @@ func TestInstallationToken_Marshal(t *testing.T) {
 		ExpiresAt: &Timestamp{referenceTime},
 		Permissions: &InstallationPermissions{
 			Actions:                       String("a"),
+			ActionsVariables:              String("ac"),
 			Administration:                String("ad"),
 			Checks:                        String("c"),
 			Contents:                      String("co"),
@@ -1057,6 +1139,7 @@ func TestInstallationToken_Marshal(t *testing.T) {
 			Metadata:                      String("md"),
 			Members:                       String("m"),
 			OrganizationAdministration:    String("oa"),
+			OrganizationCustomOrgRoles:    String("ocr"),
 			OrganizationHooks:             String("oh"),
 			OrganizationPlan:              String("op"),
 			OrganizationPreReceiveHooks:   String("opr"),
@@ -1093,6 +1176,7 @@ func TestInstallationToken_Marshal(t *testing.T) {
 		"expires_at": ` + referenceTimeStr + `,
 		"permissions": {
 			"actions": "a",
+			"actions_variables": "ac",
 			"administration": "ad",
 			"checks": "c",
 			"contents": "co",
@@ -1103,6 +1187,7 @@ func TestInstallationToken_Marshal(t *testing.T) {
 			"metadata": "md",
 			"members": "m",
 			"organization_administration": "oa",
+			"organization_custom_org_roles": "ocr",
 			"organization_hooks": "oh",
 			"organization_plan": "op",
 			"organization_pre_receive_hooks": "opr",
@@ -1172,6 +1257,7 @@ func TestApp_Marshal(t *testing.T) {
 		UpdatedAt:   &Timestamp{referenceTime},
 		Permissions: &InstallationPermissions{
 			Actions:                       String("a"),
+			ActionsVariables:              String("ac"),
 			Administration:                String("ad"),
 			Checks:                        String("c"),
 			Contents:                      String("co"),
@@ -1182,6 +1268,7 @@ func TestApp_Marshal(t *testing.T) {
 			Metadata:                      String("md"),
 			Members:                       String("m"),
 			OrganizationAdministration:    String("oa"),
+			OrganizationCustomOrgRoles:    String("ocr"),
 			OrganizationHooks:             String("oh"),
 			OrganizationPlan:              String("op"),
 			OrganizationPreReceiveHooks:   String("opr"),
@@ -1239,6 +1326,7 @@ func TestApp_Marshal(t *testing.T) {
 		"updated_at": ` + referenceTimeStr + `,
 		"permissions": {
 			"actions": "a",
+			"actions_variables": "ac",
 			"administration": "ad",
 			"checks": "c",
 			"contents": "co",
@@ -1249,6 +1337,7 @@ func TestApp_Marshal(t *testing.T) {
 			"metadata": "md",
 			"members": "m",
 			"organization_administration": "oa",
+			"organization_custom_org_roles": "ocr",
 			"organization_hooks": "oh",
 			"organization_plan": "op",
 			"organization_pre_receive_hooks": "opr",

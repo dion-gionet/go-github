@@ -28,6 +28,20 @@ func TestRepositoryRule_UnmarshalJSON(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		"With Metadata": {
+			data: `{
+                    "type": "creation",
+					"ruleset_source_type": "Repository",
+					"ruleset_source": "google",
+					"ruleset_id": 1984
+           		   }`,
+			want: &RepositoryRule{
+				RulesetSource:     "google",
+				RulesetSourceType: "Repository",
+				RulesetID:         1984,
+				Type:              "creation",
+			},
+		},
 		"Valid creation": {
 			data: `{"type":"creation"}`,
 			want: NewCreationRule(),
@@ -50,6 +64,13 @@ func TestRepositoryRule_UnmarshalJSON(t *testing.T) {
 			data: `{"type":"required_signatures"}`,
 			want: &RepositoryRule{
 				Type:       "required_signatures",
+				Parameters: nil,
+			},
+		},
+		"Valid merge_queue": {
+			data: `{"type":"merge_queue"}`,
+			want: &RepositoryRule{
+				Type:       "merge_queue",
 				Parameters: nil,
 			},
 		},
@@ -215,6 +236,17 @@ func TestRepositoryRule_UnmarshalJSON(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		"Required workflows params": {
+			data: `{"type":"workflows","parameters":{"workflows":[{"path": ".github/workflows/test.yml", "repository_id": 1}]}}`,
+			want: NewRequiredWorkflowsRule(&RequiredWorkflowsRuleParameters{
+				RequiredWorkflows: []*RuleRequiredWorkflow{
+					{
+						Path:         ".github/workflows/test.yml",
+						RepositoryID: Int64(1),
+					},
+				},
+			}),
+		},
 		"Invalid type": {
 			data: `{"type":"unknown"}`,
 			want: &RepositoryRule{
@@ -251,9 +283,15 @@ func TestRepositoriesService_GetRulesForBranch(t *testing.T) {
 		testMethod(t, r, "GET")
 		fmt.Fprint(w, `[
 			{
+			  "ruleset_id": 42069,
+			  "ruleset_source_type": "Repository",
+			  "ruleset_source": "google",
 			  "type": "creation"
 			},
 			{
+			  "ruleset_id": 42069,
+			  "ruleset_source_type": "Organization",
+			  "ruleset_source": "google",
 			  "type": "update",
 			  "parameters": {
 			    "update_allows_fetch_and_merge": true
@@ -269,9 +307,15 @@ func TestRepositoriesService_GetRulesForBranch(t *testing.T) {
 	}
 
 	creationRule := NewCreationRule()
+	creationRule.RulesetID = 42069
+	creationRule.RulesetSource = "google"
+	creationRule.RulesetSourceType = "Repository"
 	updateRule := NewUpdateRule(&UpdateAllowsFetchAndMergeRuleParameters{
 		UpdateAllowsFetchAndMerge: true,
 	})
+	updateRule.RulesetID = 42069
+	updateRule.RulesetSource = "google"
+	updateRule.RulesetSourceType = "Organization"
 
 	want := []*RepositoryRule{
 		creationRule,
@@ -481,6 +525,58 @@ func TestRepositoriesService_GetRuleset(t *testing.T) {
 	})
 }
 
+func TestRepositoriesService_UpdateRulesetNoBypassActor(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	rs := &Ruleset{
+		Name:        "ruleset",
+		Source:      "o/repo",
+		Enforcement: "enabled",
+	}
+
+	mux.HandleFunc("/repos/o/repo/rulesets/42", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, "PUT")
+		fmt.Fprint(w, `{
+			"id": 42,
+			"name": "ruleset",
+			"source_type": "Repository",
+			"source": "o/repo",
+			"enforcement": "enabled"
+		}`)
+	})
+
+	ctx := context.Background()
+
+	ruleSet, _, err := client.Repositories.UpdateRulesetNoBypassActor(ctx, "o", "repo", 42, rs)
+
+	if err != nil {
+		t.Errorf("Repositories.UpdateRulesetNoBypassActor returned error: %v \n", err)
+	}
+
+	want := &Ruleset{
+		ID:          Int64(42),
+		Name:        "ruleset",
+		SourceType:  String("Repository"),
+		Source:      "o/repo",
+		Enforcement: "enabled",
+	}
+
+	if !cmp.Equal(ruleSet, want) {
+		t.Errorf("Repositories.UpdateRulesetNoBypassActor returned %+v, want %+v", ruleSet, want)
+	}
+
+	const methodName = "UpdateRulesetNoBypassActor"
+
+	testNewRequestAndDoFailure(t, methodName, client, func() (*Response, error) {
+		got, resp, err := client.Repositories.UpdateRulesetNoBypassActor(ctx, "o", "repo", 42, nil)
+		if got != nil {
+			t.Errorf("testNewRequestAndDoFailure %v = %#v, want nil", methodName, got)
+		}
+		return resp, err
+	})
+}
+
 func TestRepositoriesService_UpdateRuleset(t *testing.T) {
 	client, mux, _, teardown := setup()
 	defer teardown()
@@ -512,6 +608,7 @@ func TestRepositoriesService_UpdateRuleset(t *testing.T) {
 		Source:      "o/repo",
 		Enforcement: "enabled",
 	}
+
 	if !cmp.Equal(ruleSet, want) {
 		t.Errorf("Repositories.UpdateRuleset returned %+v, want %+v", ruleSet, want)
 	}

@@ -281,14 +281,14 @@ func ValidateSignature(signature string, payload, secretToken []byte) error {
 
 // WebHookType returns the event type of webhook request r.
 //
-// GitHub API docs: https://docs.github.com/en/developers/webhooks-and-events/events/github-event-types
+// GitHub API docs: https://docs.github.com/developers/webhooks-and-events/events/github-event-types
 func WebHookType(r *http.Request) string {
 	return r.Header.Get(EventTypeHeader)
 }
 
 // DeliveryID returns the unique delivery ID of webhook request r.
 //
-// GitHub API docs: https://docs.github.com/en/developers/webhooks-and-events/events/github-event-types
+// GitHub API docs: https://docs.github.com/developers/webhooks-and-events/events/github-event-types
 func DeliveryID(r *http.Request) string {
 	return r.Header.Get(DeliveryIDHeader)
 }
@@ -326,7 +326,7 @@ func ParseWebHook(messageType string, payload []byte) (interface{}, error) {
 	return event.ParsePayload()
 }
 
-// WebhookTypes returns a sorted list of all the known GitHub event type strings
+// MessageTypes returns a sorted list of all the known GitHub event type strings
 // supported by go-github.
 func MessageTypes() []string {
 	types := make([]string, 0, len(eventTypeMapping))

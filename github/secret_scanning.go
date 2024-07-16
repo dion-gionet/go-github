@@ -72,9 +72,9 @@ type SecretScanningAlertListOptions struct {
 	// List options can vary on the Enterprise type.
 	// On Enterprise Cloud, Secret Scan alerts support requesting by page number
 	// along with providing a cursor for an "after" param.
-	// See: https://docs.github.com/en/enterprise-cloud@latest/rest/secret-scanning#list-secret-scanning-alerts-for-an-organization
+	// See: https://docs.github.com/enterprise-cloud@latest/rest/secret-scanning#list-secret-scanning-alerts-for-an-organization
 	// Whereas on Enterprise Server, pagination is by index.
-	// See: https://docs.github.com/en/enterprise-server@3.6/rest/secret-scanning#list-secret-scanning-alerts-for-an-organization
+	// See: https://docs.github.com/enterprise-server@3.6/rest/secret-scanning#list-secret-scanning-alerts-for-an-organization
 	ListOptions
 }
 
@@ -90,12 +90,14 @@ type SecretScanningAlertUpdateOptions struct {
 	Resolution *string `json:"resolution,omitempty"`
 }
 
-// Lists secret scanning alerts for eligible repositories in an enterprise, from newest to oldest.
+// ListAlertsForEnterprise lists secret scanning alerts for eligible repositories in an enterprise, from newest to oldest.
 //
 // To use this endpoint, you must be a member of the enterprise, and you must use an access token with the repo scope or
 // security_events scope. Alerts are only returned for organizations in the enterprise for which you are an organization owner or a security manager.
 //
-// GitHub API docs: https://docs.github.com/en/enterprise-server@3.5/rest/secret-scanning#list-secret-scanning-alerts-for-an-enterprise
+// GitHub API docs: https://docs.github.com/rest/secret-scanning/secret-scanning#list-secret-scanning-alerts-for-an-enterprise
+//
+//meta:operation GET /enterprises/{enterprise}/secret-scanning/alerts
 func (s *SecretScanningService) ListAlertsForEnterprise(ctx context.Context, enterprise string, opts *SecretScanningAlertListOptions) ([]*SecretScanningAlert, *Response, error) {
 	u := fmt.Sprintf("enterprises/%v/secret-scanning/alerts", enterprise)
 	u, err := addOptions(u, opts)
@@ -117,12 +119,14 @@ func (s *SecretScanningService) ListAlertsForEnterprise(ctx context.Context, ent
 	return alerts, resp, nil
 }
 
-// Lists secret scanning alerts for eligible repositories in an organization, from newest to oldest.
+// ListAlertsForOrg lists secret scanning alerts for eligible repositories in an organization, from newest to oldest.
 //
 // To use this endpoint, you must be an administrator for the repository or organization, and you must use an access token with
 // the repo scope or security_events scope.
 //
-// GitHub API docs: https://docs.github.com/en/enterprise-server@3.5/rest/secret-scanning#list-secret-scanning-alerts-for-an-organization
+// GitHub API docs: https://docs.github.com/rest/secret-scanning/secret-scanning#list-secret-scanning-alerts-for-an-organization
+//
+//meta:operation GET /orgs/{org}/secret-scanning/alerts
 func (s *SecretScanningService) ListAlertsForOrg(ctx context.Context, org string, opts *SecretScanningAlertListOptions) ([]*SecretScanningAlert, *Response, error) {
 	u := fmt.Sprintf("orgs/%v/secret-scanning/alerts", org)
 	u, err := addOptions(u, opts)
@@ -144,12 +148,14 @@ func (s *SecretScanningService) ListAlertsForOrg(ctx context.Context, org string
 	return alerts, resp, nil
 }
 
-// Lists secret scanning alerts for a private repository, from newest to oldest.
+// ListAlertsForRepo lists secret scanning alerts for a private repository, from newest to oldest.
 //
 // To use this endpoint, you must be an administrator for the repository or organization, and you must use an access token with
 // the repo scope or security_events scope.
 //
-// GitHub API docs: https://docs.github.com/en/enterprise-server@3.5/rest/secret-scanning#list-secret-scanning-alerts-for-a-repository
+// GitHub API docs: https://docs.github.com/rest/secret-scanning/secret-scanning#list-secret-scanning-alerts-for-a-repository
+//
+//meta:operation GET /repos/{owner}/{repo}/secret-scanning/alerts
 func (s *SecretScanningService) ListAlertsForRepo(ctx context.Context, owner, repo string, opts *SecretScanningAlertListOptions) ([]*SecretScanningAlert, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/secret-scanning/alerts", owner, repo)
 	u, err := addOptions(u, opts)
@@ -171,12 +177,14 @@ func (s *SecretScanningService) ListAlertsForRepo(ctx context.Context, owner, re
 	return alerts, resp, nil
 }
 
-// Gets a single secret scanning alert detected in a private repository.
+// GetAlert gets a single secret scanning alert detected in a private repository.
 //
 // To use this endpoint, you must be an administrator for the repository or organization, and you must use an access token with
 // the repo scope or security_events scope.
 //
-// GitHub API docs: https://docs.github.com/en/enterprise-server@3.5/rest/secret-scanning#get-a-secret-scanning-alert
+// GitHub API docs: https://docs.github.com/rest/secret-scanning/secret-scanning#get-a-secret-scanning-alert
+//
+//meta:operation GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}
 func (s *SecretScanningService) GetAlert(ctx context.Context, owner, repo string, number int64) (*SecretScanningAlert, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/secret-scanning/alerts/%v", owner, repo, number)
 
@@ -194,12 +202,14 @@ func (s *SecretScanningService) GetAlert(ctx context.Context, owner, repo string
 	return alert, resp, nil
 }
 
-// Updates the status of a secret scanning alert in a private repository.
+// UpdateAlert updates the status of a secret scanning alert in a private repository.
 //
 // To use this endpoint, you must be an administrator for the repository or organization, and you must use an access token with
 // the repo scope or security_events scope.
 //
-// GitHub API docs: https://docs.github.com/en/enterprise-server@3.5/rest/secret-scanning#update-a-secret-scanning-alert
+// GitHub API docs: https://docs.github.com/rest/secret-scanning/secret-scanning#update-a-secret-scanning-alert
+//
+//meta:operation PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}
 func (s *SecretScanningService) UpdateAlert(ctx context.Context, owner, repo string, number int64, opts *SecretScanningAlertUpdateOptions) (*SecretScanningAlert, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/secret-scanning/alerts/%v", owner, repo, number)
 
@@ -217,12 +227,14 @@ func (s *SecretScanningService) UpdateAlert(ctx context.Context, owner, repo str
 	return alert, resp, nil
 }
 
-// Lists all locations for a given secret scanning alert for a private repository.
+// ListLocationsForAlert lists all locations for a given secret scanning alert for a private repository.
 //
 // To use this endpoint, you must be an administrator for the repository or organization, and you must use an access token with
 // the repo scope or security_events scope.
 //
-// GitHub API docs: https://docs.github.com/en/enterprise-server@3.5/rest/secret-scanning#list-locations-for-a-secret-scanning-alert
+// GitHub API docs: https://docs.github.com/rest/secret-scanning/secret-scanning#list-locations-for-a-secret-scanning-alert
+//
+//meta:operation GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations
 func (s *SecretScanningService) ListLocationsForAlert(ctx context.Context, owner, repo string, number int64, opts *ListOptions) ([]*SecretScanningAlertLocation, *Response, error) {
 	u := fmt.Sprintf("repos/%v/%v/secret-scanning/alerts/%v/locations", owner, repo, number)
 	u, err := addOptions(u, opts)

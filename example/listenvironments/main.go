@@ -18,7 +18,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/google/go-github/v55/github"
+	"github.com/google/go-github/v63/github"
 )
 
 func main() {
